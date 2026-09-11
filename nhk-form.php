@@ -6,6 +6,7 @@
  * Requires at least: 5.9
  * Requires PHP: 7.4
  * Author: nisehatakiti
+ * Author URI: https://nisehatakiti.online/
  * License: GPL-2.0-or-later
  * Text Domain: nhk-form
  */
