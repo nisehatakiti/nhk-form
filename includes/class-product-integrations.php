@@ -9,10 +9,23 @@ if ( ! defined( 'ABSPATH' ) ) exit;
  */
 class NHK_Form_Product_Integrations {
 	public static function register() {
+		static $registered = false;
+		if ( $registered ) return;
+		$registered = true;
+
 		self::register_alumni_core();
 		self::register_alumni_core_form_templates();
 		self::import_alumni_core_forms();
 		self::mirror_existing_nhk_forms_to_alumni();
+		self::reconcile_alumni_links();
+
+		// Trash is intentionally not synchronized. Only permanent deletion unlinks
+		// the surviving record. Explicit two-sided removal is handled separately.
+		add_action( 'before_delete_post', array( __CLASS__, 'handle_permanent_delete' ), 10, 2 );
+		if ( is_admin() ) {
+			add_filter( 'post_row_actions', array( __CLASS__, 'add_link_actions' ), 20, 2 );
+			add_action( 'admin_post_nhk_form_link_action', array( __CLASS__, 'handle_link_action' ) );
+		}
 		do_action( 'nhk_form_register_product_schemas' );
 	}
 
@@ -127,8 +140,13 @@ class NHK_Form_Product_Integrations {
 			'orderby'        => 'ID',
 			'order'          => 'ASC',
 			'meta_query'     => array(
+				'relation' => 'AND',
 				array(
 					'key'     => NHK_Form_Post_Type::META_SOURCE_PROVIDER,
+					'compare' => 'NOT EXISTS',
+				),
+				array(
+					'key'     => NHK_Form_Post_Type::META_LINK_STATE,
 					'compare' => 'NOT EXISTS',
 				),
 			),
@@ -137,6 +155,187 @@ class NHK_Form_Product_Integrations {
 		foreach ( $forms as $form ) {
 			self::sync_alumni_source_from_nhk( $form->ID );
 		}
+	}
+
+
+	/**
+	 * Clear links whose Alumni Core counterpart was permanently deleted.
+	 * Trash does not reach this path and therefore keeps the relationship.
+	 */
+	private static function reconcile_alumni_links() {
+		if ( ! is_admin() || ! current_user_can( 'manage_options' ) ) return;
+		if ( ! class_exists( '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type' ) ) return;
+
+		$form_type = '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type';
+		$forms = get_posts( array(
+			'post_type'      => NHK_Form_Post_Type::SLUG,
+			'post_status'    => array( 'publish', 'draft', 'private', 'trash' ),
+			'posts_per_page' => -1,
+			'meta_query'     => array(
+				'relation' => 'AND',
+				array( 'key' => NHK_Form_Post_Type::META_SOURCE_PROVIDER, 'value' => 'alumni-core' ),
+				array( 'key' => NHK_Form_Post_Type::META_SOURCE_ID, 'compare' => 'EXISTS' ),
+			),
+		) );
+
+		foreach ( $forms as $form ) {
+			$source_id = NHK_Form_Post_Type::source_id( $form->ID );
+			$source = $source_id ? get_post( $source_id ) : null;
+			if ( ! $source || $source->post_type !== $form_type::SLUG ) {
+				self::unlink_nhk_form( $form->ID );
+			}
+		}
+	}
+
+	/**
+	 * Native permanent deletion: preserve the surviving form and remove only
+	 * the relationship. WordPress trash operations are deliberately ignored.
+	 */
+	public static function handle_permanent_delete( $post_id, $post ) {
+		if ( ! $post instanceof WP_Post ) return;
+
+		if ( NHK_Form_Post_Type::SLUG === $post->post_type ) {
+			if ( 'alumni-core' !== NHK_Form_Post_Type::source_provider( $post_id ) ) return;
+			$source_id = NHK_Form_Post_Type::source_id( $post_id );
+			if ( $source_id && get_post( $source_id ) ) {
+				update_post_meta( $source_id, '_nhk_form_link_state', 'unlinked' );
+				update_post_meta( $source_id, '_nhk_form_unlinked_at', current_time( 'mysql' ) );
+			}
+			return;
+		}
+
+		if ( ! class_exists( '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type' ) ) return;
+		$form_type = '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type';
+		if ( $form_type::SLUG !== $post->post_type ) return;
+
+		$mirrors = get_posts( array(
+			'post_type'      => NHK_Form_Post_Type::SLUG,
+			'post_status'    => 'any',
+			'posts_per_page' => -1,
+			'fields'         => 'ids',
+			'meta_query'     => array(
+				'relation' => 'AND',
+				array( 'key' => NHK_Form_Post_Type::META_SOURCE_PROVIDER, 'value' => 'alumni-core' ),
+				array( 'key' => NHK_Form_Post_Type::META_SOURCE_ID, 'value' => $post_id ),
+			),
+		) );
+		foreach ( $mirrors as $nhk_id ) self::unlink_nhk_form( $nhk_id );
+	}
+
+	private static function unlink_nhk_form( $nhk_id ) {
+		delete_post_meta( $nhk_id, NHK_Form_Post_Type::META_SOURCE_PROVIDER );
+		delete_post_meta( $nhk_id, NHK_Form_Post_Type::META_SOURCE_ID );
+		update_post_meta( $nhk_id, NHK_Form_Post_Type::META_LINK_STATE, 'unlinked' );
+		update_post_meta( $nhk_id, '_nhk_form_unlinked_at', current_time( 'mysql' ) );
+	}
+
+	private static function find_nhk_mirrors( $source_id ) {
+		return get_posts( array(
+			'post_type'      => NHK_Form_Post_Type::SLUG,
+			'post_status'    => 'any',
+			'posts_per_page' => -1,
+			'fields'         => 'ids',
+			'meta_query'     => array(
+				'relation' => 'AND',
+				array( 'key' => NHK_Form_Post_Type::META_SOURCE_PROVIDER, 'value' => 'alumni-core' ),
+				array( 'key' => NHK_Form_Post_Type::META_SOURCE_ID, 'value' => $source_id ),
+			),
+		) );
+	}
+
+	public static function add_link_actions( $actions, $post ) {
+		if ( ! current_user_can( 'delete_post', $post->ID ) ) return $actions;
+
+		$is_nhk = NHK_Form_Post_Type::SLUG === $post->post_type;
+		$is_alumni = class_exists( '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type' )
+			&& '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type'::SLUG === $post->post_type;
+		if ( ! $is_nhk && ! $is_alumni ) return $actions;
+
+		$linked = $is_nhk
+			? ( 'alumni-core' === NHK_Form_Post_Type::source_provider( $post->ID ) && NHK_Form_Post_Type::source_id( $post->ID ) )
+			: ! empty( self::find_nhk_mirrors( $post->ID ) );
+
+		if ( $linked ) {
+			$actions['nhk_unlink'] = '<a href="' . esc_url( self::action_url( $post->ID, 'unlink' ) ) . '">連携解除</a>';
+			if ( 'trash' !== $post->post_status ) {
+				$actions['nhk_trash_both'] = '<a href="' . esc_url( self::action_url( $post->ID, 'trash_both' ) ) . '" onclick="return confirm(\'連携先もゴミ箱へ移動します。\');">両方をゴミ箱へ</a>';
+			}
+		} elseif ( $is_nhk && 'unlinked' === get_post_meta( $post->ID, NHK_Form_Post_Type::META_LINK_STATE, true ) ) {
+			$actions['nhk_reconnect'] = '<a href="' . esc_url( self::action_url( $post->ID, 'reconnect' ) ) . '">Alumni Coreに再接続</a>';
+		} elseif ( $is_alumni && 'unlinked' === get_post_meta( $post->ID, '_nhk_form_link_state', true ) ) {
+			$actions['nhk_reconnect'] = '<a href="' . esc_url( self::action_url( $post->ID, 'reconnect' ) ) . '">NHK Formに再接続</a>';
+		}
+		return $actions;
+	}
+
+	private static function action_url( $post_id, $link_action ) {
+		$url = add_query_arg( array(
+			'action'      => 'nhk_form_link_action',
+			'post_id'     => (int) $post_id,
+			'link_action' => $link_action,
+		), admin_url( 'admin-post.php' ) );
+		return wp_nonce_url( $url, 'nhk_form_link_action_' . $post_id . '_' . $link_action );
+	}
+
+	public static function handle_link_action() {
+		$post_id = absint( $_GET['post_id'] ?? 0 );
+		$link_action = sanitize_key( $_GET['link_action'] ?? '' );
+		$post = $post_id ? get_post( $post_id ) : null;
+		if ( ! $post || ! current_user_can( 'delete_post', $post_id ) ) wp_die( '権限がありません。' );
+		check_admin_referer( 'nhk_form_link_action_' . $post_id . '_' . $link_action );
+
+		$is_nhk = NHK_Form_Post_Type::SLUG === $post->post_type;
+		$is_alumni = class_exists( '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type' )
+			&& '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type'::SLUG === $post->post_type;
+		if ( ! $is_nhk && ! $is_alumni ) wp_die( '対象フォームではありません。' );
+
+		if ( 'unlink' === $link_action ) {
+			if ( $is_nhk ) {
+				$source_id = NHK_Form_Post_Type::source_id( $post_id );
+				if ( $source_id ) update_post_meta( $source_id, '_nhk_form_link_state', 'unlinked' );
+				self::unlink_nhk_form( $post_id );
+			} else {
+				foreach ( self::find_nhk_mirrors( $post_id ) as $nhk_id ) self::unlink_nhk_form( $nhk_id );
+				update_post_meta( $post_id, '_nhk_form_link_state', 'unlinked' );
+			}
+			$result = 'unlinked';
+		} elseif ( 'trash_both' === $link_action ) {
+			if ( $is_nhk ) {
+				$source_id = NHK_Form_Post_Type::source_id( $post_id );
+				if ( $source_id && get_post_status( $source_id ) !== 'trash' ) wp_trash_post( $source_id );
+				if ( get_post_status( $post_id ) !== 'trash' ) wp_trash_post( $post_id );
+			} else {
+				foreach ( self::find_nhk_mirrors( $post_id ) as $nhk_id ) if ( get_post_status( $nhk_id ) !== 'trash' ) wp_trash_post( $nhk_id );
+				if ( get_post_status( $post_id ) !== 'trash' ) wp_trash_post( $post_id );
+			}
+			$result = 'trashed_both';
+		} elseif ( 'reconnect' === $link_action ) {
+			if ( $is_nhk ) {
+				delete_post_meta( $post_id, NHK_Form_Post_Type::META_LINK_STATE );
+				delete_post_meta( $post_id, '_nhk_form_unlinked_at' );
+				self::sync_alumni_source_from_nhk( $post_id );
+			} else {
+				delete_post_meta( $post_id, '_nhk_form_link_state' );
+				delete_post_meta( $post_id, '_nhk_form_unlinked_at' );
+				$nhk_id = wp_insert_post( array(
+					'post_type'   => NHK_Form_Post_Type::SLUG,
+					'post_status' => $post->post_status,
+					'post_title'  => $post->post_title,
+				), true );
+				if ( ! is_wp_error( $nhk_id ) && $nhk_id ) {
+					self::copy_alumni_form_to_nhk( $post_id, $nhk_id );
+					update_post_meta( $nhk_id, NHK_Form_Post_Type::META_SOURCE_PROVIDER, 'alumni-core' );
+					update_post_meta( $nhk_id, NHK_Form_Post_Type::META_SOURCE_ID, $post_id );
+				}
+			}
+			$result = 'reconnected';
+		} else {
+			wp_die( '無効な操作です。' );
+		}
+
+		$redirect = wp_get_referer() ?: admin_url( 'edit.php?post_type=' . $post->post_type );
+		wp_safe_redirect( add_query_arg( 'nhk_link_result', $result, $redirect ) );
+		exit;
 	}
 
 	private static function import_alumni_core_forms() {
@@ -153,6 +352,10 @@ class NHK_Form_Product_Integrations {
 		) );
 
 		foreach ( $forms as $source ) {
+			// A permanently deleted NHK mirror intentionally leaves the Alumni
+			// form alive. Do not silently recreate it until the user reconnects.
+			if ( 'unlinked' === get_post_meta( $source->ID, '_nhk_form_link_state', true ) ) continue;
+
 			$existing = get_posts( array(
 				'post_type'      => NHK_Form_Post_Type::SLUG,
 				'post_status'    => 'any',
