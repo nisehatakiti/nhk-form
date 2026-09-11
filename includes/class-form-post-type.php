@@ -15,6 +15,8 @@ class NHK_Form_Post_Type {
  const META_REPLY_TO_MODE='_nhk_form_reply_to_mode';
  const META_REPLY_TO_EMAIL='_nhk_form_reply_to_email';
  const META_REPLY_TO_FIELD='_nhk_form_reply_to_field';
+ const META_SOURCE_PROVIDER='_nhk_form_source_provider';
+ const META_SOURCE_ID='_nhk_form_source_id';
  public static function register(){
   register_post_type(self::SLUG,array(
    'labels'=>array('name'=>'フォーム','singular_name'=>'フォーム','menu_name'=>'フォーム','all_items'=>'フォーム一覧','add_new'=>'新規追加','add_new_item'=>'新規フォームを追加','edit_item'=>'フォームを編集','view_item'=>'フォームを表示','search_items'=>'フォームを検索'),
@@ -34,4 +36,6 @@ class NHK_Form_Post_Type {
  public static function reply_mode($id){$v=sanitize_key((string)get_post_meta($id,self::META_REPLY_TO_MODE,true));return in_array($v,array('none','fixed','form_field'),true)?$v:'none';}
  public static function reply_email($id){$v=sanitize_email((string)get_post_meta($id,self::META_REPLY_TO_EMAIL,true));return is_email($v)?$v:'';}
  public static function reply_field($id){return sanitize_key((string)get_post_meta($id,self::META_REPLY_TO_FIELD,true));}
+ public static function source_provider($id){return sanitize_key((string)get_post_meta($id,self::META_SOURCE_PROVIDER,true));}
+ public static function source_id($id){return absint(get_post_meta($id,self::META_SOURCE_ID,true));}
 }
