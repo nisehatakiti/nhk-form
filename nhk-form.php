@@ -2,7 +2,7 @@
 /**
  * Plugin Name: NHK Form
  * Description: 汎用フォームエディタ。通常フォームとWordPress投稿の下書き作成フォームを提供し、外部プラグインの投稿スキーマ連携に対応します。
- * Version: 0.2.2
+ * Version: 0.2.3
  * Requires at least: 5.9
  * Requires PHP: 7.4
  * Author: nisehatakiti
@@ -10,7 +10,7 @@
  * Text Domain: nhk-form
  */
 if ( ! defined( 'ABSPATH' ) ) exit;
-define( 'NHK_FORM_VERSION', '0.2.2' );
+define( 'NHK_FORM_VERSION', '0.2.3' );
 define( 'NHK_FORM_PATH', plugin_dir_path( __FILE__ ) );
 require_once NHK_FORM_PATH . 'includes/class-schema-registry.php';
 require_once NHK_FORM_PATH . 'includes/class-product-integrations.php';
