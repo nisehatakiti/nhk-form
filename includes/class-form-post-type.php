@@ -29,7 +29,7 @@ class NHK_Form_Post_Type {
  public static function schema($id){return sanitize_key((string)get_post_meta($id,self::META_SCHEMA,true));}
  public static function description($id){return (string)get_post_meta($id,self::META_DESCRIPTION,true);}
  public static function recipients($id){$parts=preg_split('/[\r\n,;]+/',(string)get_post_meta($id,self::META_RECIPIENTS,true));$out=array();foreach((array)$parts as $v){$v=sanitize_email(trim($v));if($v&&is_email($v))$out[]=$v;}return array_values(array_unique($out));}
- public static function mail_subject($id){$v=sanitize_text_field((string)get_post_meta($id,self::META_MAIL_SUBJECT,true));return $v?$v:'['.get_bloginfo('name').'] '.get_the_title($id);}
+ public static function mail_subject($id){$v=sanitize_text_field((string)get_post_meta($id,self::META_MAIL_SUBJECT,true));return $v?$v:'[Form入力通知] '.get_the_title($id);}
  public static function success($id){$v=(string)get_post_meta($id,self::META_SUCCESS,true);return $v?$v:'送信が完了しました。ありがとうございました。';}
  public static function auto_reply($id){return '1'===(string)get_post_meta($id,self::META_AUTO_REPLY,true);}
  public static function from_name($id){return sanitize_text_field((string)get_post_meta($id,self::META_FROM_NAME,true));}
