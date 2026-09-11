@@ -197,14 +197,34 @@ class NHK_Form_Product_Integrations {
 		update_post_meta( $nhk_id, NHK_Form_Post_Type::META_SCHEMA, $schema );
 	}
 
+	/**
+	 * Synchronize every NHK Form into Alumni Core when Alumni Core is active.
+	 *
+	 * Imported forms already have a source. Standalone forms created in NHK Form
+	 * get an Alumni Core alumni_form record on their first save, which makes them
+	 * immediately available to Alumni Core content/section selectors as well.
+	 */
 	public static function sync_alumni_source_from_nhk( $nhk_id ) {
-		if ( 'alumni-core' !== NHK_Form_Post_Type::source_provider( $nhk_id ) ) return;
-		$source_id = NHK_Form_Post_Type::source_id( $nhk_id );
-		if ( ! $source_id || ! class_exists( '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type' ) ) return;
-		$source = get_post( $source_id );
-		if ( ! $source || 'alumni_form' !== $source->post_type ) return;
+		if ( ! class_exists( '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type' ) ) return;
 
 		$form_type = '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type';
+		$source_id = NHK_Form_Post_Type::source_id( $nhk_id );
+		$provider  = NHK_Form_Post_Type::source_provider( $nhk_id );
+
+		if ( 'alumni-core' !== $provider || ! $source_id ) {
+			$source_id = wp_insert_post( array(
+				'post_type'   => $form_type::SLUG,
+				'post_status' => get_post_status( $nhk_id ) ?: 'draft',
+				'post_title'  => get_the_title( $nhk_id ),
+			), true );
+			if ( is_wp_error( $source_id ) || ! $source_id ) return;
+
+			update_post_meta( $nhk_id, NHK_Form_Post_Type::META_SOURCE_PROVIDER, 'alumni-core' );
+			update_post_meta( $nhk_id, NHK_Form_Post_Type::META_SOURCE_ID, (int) $source_id );
+		}
+
+		$source = get_post( $source_id );
+		if ( ! $source || $form_type::SLUG !== $source->post_type ) return;
 		$mode = NHK_Form_Post_Type::mode( $nhk_id );
 		$schema = NHK_Form_Post_Type::schema( $nhk_id );
 		$target = '';
