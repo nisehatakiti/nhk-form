@@ -25,6 +25,7 @@ class NHK_Form_Product_Integrations {
 		if ( is_admin() ) {
 			add_filter( 'post_row_actions', array( __CLASS__, 'add_link_actions' ), 20, 2 );
 			add_action( 'admin_post_nhk_form_link_action', array( __CLASS__, 'handle_link_action' ) );
+			add_action( 'admin_notices', array( __CLASS__, 'render_link_notice' ) );
 		}
 		do_action( 'nhk_form_register_product_schemas' );
 	}
@@ -241,6 +242,19 @@ class NHK_Form_Product_Integrations {
 				array( 'key' => NHK_Form_Post_Type::META_SOURCE_ID, 'value' => $source_id ),
 			),
 		) );
+	}
+
+
+	public static function render_link_notice() {
+		if ( empty( $_GET['nhk_link_result'] ) ) return;
+		$result = sanitize_key( $_GET['nhk_link_result'] );
+		$messages = array(
+			'unlinked'     => 'フォームの連携を解除しました。両方のフォームは残っています。',
+			'trashed_both' => '連携している両方のフォームをゴミ箱へ移動しました。',
+			'reconnected'  => 'フォームの連携を再接続しました。',
+		);
+		if ( empty( $messages[ $result ] ) ) return;
+		echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( $messages[ $result ] ) . '</p></div>';
 	}
 
 	public static function add_link_actions( $actions, $post ) {
