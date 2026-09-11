@@ -12,6 +12,7 @@ class NHK_Form_Product_Integrations {
 		self::register_alumni_core();
 		self::register_alumni_core_form_templates();
 		self::import_alumni_core_forms();
+		self::mirror_existing_nhk_forms_to_alumni();
 		do_action( 'nhk_form_register_product_schemas' );
 	}
 
@@ -109,6 +110,35 @@ class NHK_Form_Product_Integrations {
 	 * The original Alumni Core post remains the source and is updated whenever
 	 * its NHK mirror is edited.
 	 */
+
+	/**
+	 * Reconcile forms that were created in NHK Form before bidirectional
+	 * mirroring was introduced. This runs only for an administrator in wp-admin
+	 * so public requests never perform synchronization writes.
+	 */
+	private static function mirror_existing_nhk_forms_to_alumni() {
+		if ( ! is_admin() || ! current_user_can( 'manage_options' ) ) return;
+		if ( ! class_exists( '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type' ) ) return;
+
+		$forms = get_posts( array(
+			'post_type'      => NHK_Form_Post_Type::SLUG,
+			'post_status'    => array( 'publish', 'draft', 'private' ),
+			'posts_per_page' => -1,
+			'orderby'        => 'ID',
+			'order'          => 'ASC',
+			'meta_query'     => array(
+				array(
+					'key'     => NHK_Form_Post_Type::META_SOURCE_PROVIDER,
+					'compare' => 'NOT EXISTS',
+				),
+			),
+		) );
+
+		foreach ( $forms as $form ) {
+			self::sync_alumni_source_from_nhk( $form->ID );
+		}
+	}
+
 	private static function import_alumni_core_forms() {
 		if ( ! class_exists( '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type' ) ) return;
 		if ( ! current_user_can( 'manage_options' ) && is_admin() ) return;
