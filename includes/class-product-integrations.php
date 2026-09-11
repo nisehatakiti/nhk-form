@@ -247,8 +247,8 @@ class NHK_Form_Product_Integrations {
 		if ( ! current_user_can( 'delete_post', $post->ID ) ) return $actions;
 
 		$is_nhk = NHK_Form_Post_Type::SLUG === $post->post_type;
-		$is_alumni = class_exists( '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type' )
-			&& '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type'::SLUG === $post->post_type;
+		$form_type = '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type';
+		$is_alumni = class_exists( $form_type ) && $form_type::SLUG === $post->post_type;
 		if ( ! $is_nhk && ! $is_alumni ) return $actions;
 
 		$linked = $is_nhk
@@ -285,8 +285,8 @@ class NHK_Form_Product_Integrations {
 		check_admin_referer( 'nhk_form_link_action_' . $post_id . '_' . $link_action );
 
 		$is_nhk = NHK_Form_Post_Type::SLUG === $post->post_type;
-		$is_alumni = class_exists( '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type' )
-			&& '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type'::SLUG === $post->post_type;
+		$form_type = '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type';
+		$is_alumni = class_exists( $form_type ) && $form_type::SLUG === $post->post_type;
 		if ( ! $is_nhk && ! $is_alumni ) wp_die( '対象フォームではありません。' );
 
 		if ( 'unlink' === $link_action ) {
