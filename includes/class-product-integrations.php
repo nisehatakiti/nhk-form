@@ -191,8 +191,15 @@ class NHK_Form_Product_Integrations {
 		$mode = NHK_Form_Post_Type::mode( $nhk_id );
 		$schema = NHK_Form_Post_Type::schema( $nhk_id );
 		$target = '';
-		if ( 0 === strpos( $schema, 'alumni_form_' ) ) {
-			$target = $form_type::get_target( $source_id );
+		if ( 'post_submission' === $mode ) {
+			if ( 0 === strpos( $schema, 'alumni_form_' ) ) {
+				$target = $form_type::get_target( $source_id );
+			} elseif ( 'alumni_person_greeting' === $schema ) {
+				$target = 'person_greeting';
+			} elseif ( 'alumni_news' === $schema || 'alumni_event' === $schema ) {
+				$target = 'news_event';
+			}
+			if ( ! $target ) $target = $form_type::get_target( $source_id );
 		}
 
 		wp_update_post( array(
