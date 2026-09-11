@@ -20,6 +20,7 @@ require_once NHK_FORM_PATH . 'includes/class-form-public.php';
 add_action( 'init', array( 'NHK_Form_Post_Type', 'register' ) );
 add_action( 'plugins_loaded', array( 'NHK_Form_Schema_Registry', 'bootstrap' ), 20 );
 add_action( 'nhk_form_register_schemas', array( 'NHK_Form_Product_Integrations', 'register' ), 20 );
+add_action( 'init', array( 'NHK_Form_Product_Integrations', 'register' ), 20 );
 if ( is_admin() ) NHK_Form_Admin::register();
 NHK_Form_Public::register();
 register_activation_hook( __FILE__, function(){ NHK_Form_Post_Type::register(); flush_rewrite_rules(); } );
