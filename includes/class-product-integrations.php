@@ -135,7 +135,10 @@ class NHK_Form_Product_Integrations {
 				'fields'         => 'ids',
 			) );
 
-			if ( $existing ) continue;
+			if ( $existing ) {
+				self::ensure_alumni_import_configuration( (int) $existing[0], $source->ID );
+				continue;
+			}
 
 			$nhk_id = wp_insert_post( array(
 				'post_type'   => NHK_Form_Post_Type::SLUG,
@@ -147,6 +150,20 @@ class NHK_Form_Product_Integrations {
 			self::copy_alumni_form_to_nhk( $source->ID, $nhk_id );
 			update_post_meta( $nhk_id, NHK_Form_Post_Type::META_SOURCE_PROVIDER, 'alumni-core' );
 			update_post_meta( $nhk_id, NHK_Form_Post_Type::META_SOURCE_ID, $source->ID );
+		}
+	}
+
+
+	private static function ensure_alumni_import_configuration( $nhk_id, $source_id ) {
+		$form_type = '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type';
+		if ( ! $form_type::is_content_submission( $source_id ) ) return;
+
+		$schema = 'alumni_form_' . $source_id;
+		if ( NHK_Form_Post_Type::mode( $nhk_id ) !== 'post_submission' ) {
+			update_post_meta( $nhk_id, NHK_Form_Post_Type::META_MODE, 'post_submission' );
+		}
+		if ( NHK_Form_Post_Type::schema( $nhk_id ) !== $schema ) {
+			update_post_meta( $nhk_id, NHK_Form_Post_Type::META_SCHEMA, $schema );
 		}
 	}
 
@@ -253,6 +270,9 @@ class NHK_Form_Product_Integrations {
 			}
 
 			$map = self::legacy_alumni_map( $target, $keys );
+			if ( empty( $map ) ) {
+				$map = self::fallback_alumni_map( $target, $fields );
+			}
 			if ( empty( $map ) ) continue;
 
 			$schema = array(
@@ -267,6 +287,64 @@ class NHK_Form_Product_Integrations {
 
 			NHK_Form_Schema_Registry::register( 'alumni_form_' . $form->ID, $schema );
 		}
+	}
+
+
+	/**
+	 * Existing Alumni Core forms may use arbitrary field keys. Always provide
+	 * a usable submission map so imported content-submission forms can still
+	 * create Alumni Core draft content instead of silently becoming schemas
+	 * that cannot be resolved.
+	 */
+	private static function fallback_alumni_map( $target, $fields ) {
+		$title = '';
+		$content = '';
+		$date = '';
+		$file = '';
+
+		foreach ( (array) $fields as $field ) {
+			$key = sanitize_key( $field['key'] ?? '' );
+			$type = sanitize_key( $field['type'] ?? 'text' );
+			if ( ! $key ) continue;
+			if ( ! $title && 'file' !== $type ) $title = $key;
+			if ( ! $content && 'textarea' === $type ) $content = $key;
+			if ( ! $date && 'date' === $type ) $date = $key;
+			if ( ! $file && 'file' === $type ) $file = $key;
+		}
+
+		if ( ! $title ) return array();
+
+		if ( 'person_greeting' === $target
+			&& class_exists( '\\AlumniCore\\Includes\\Modules\\Content\\Post_Type' ) ) {
+			$content_type = '\\AlumniCore\\Includes\\Modules\\Content\\Post_Type';
+			return array(
+				'post_type'  => $content_type::SLUG,
+				'fixed_meta' => array( $content_type::META_KIND => $content_type::KIND_PERSON_GREETING ),
+				'map'        => array(
+					'title'   => $title,
+					'content' => $content,
+					'meta'    => array(),
+					'files'   => $file ? array( $file => $content_type::META_PERSON_PHOTO_ID ) : array(),
+				),
+			);
+		}
+
+		if ( 'news_event' === $target
+			&& class_exists( '\\AlumniCore\\Includes\\Modules\\NewsEvents\\Post_Type' ) ) {
+			$news = '\\AlumniCore\\Includes\\Modules\\NewsEvents\\Post_Type';
+			return array(
+				'post_type'  => $news::SLUG,
+				'fixed_meta' => array( $news::META_CONTENT_TYPE => $date ? $news::TYPE_EVENT : $news::TYPE_NEWS ),
+				'map'        => array(
+					'title'   => $title,
+					'content' => $content,
+					'meta'    => $date ? array( $news::META_EVENT_DATE => $date ) : array(),
+					'files'   => $file ? array( $file => 'featured' ) : array(),
+				),
+			);
+		}
+
+		return array();
 	}
 
 	private static function legacy_alumni_map( $target, $keys ) {
