@@ -17,6 +17,7 @@ class NHK_Form_Post_Type {
  const META_REPLY_TO_FIELD='_nhk_form_reply_to_field';
  const META_SOURCE_PROVIDER='_nhk_form_source_provider';
  const META_SOURCE_ID='_nhk_form_source_id';
+ const META_LINK_STATE='_nhk_form_link_state';
  public static function register(){
   register_post_type(self::SLUG,array(
    'labels'=>array('name'=>'フォーム','singular_name'=>'フォーム','menu_name'=>'フォーム','all_items'=>'フォーム一覧','add_new'=>'新規追加','add_new_item'=>'新規フォームを追加','edit_item'=>'フォームを編集','view_item'=>'フォームを表示','search_items'=>'フォームを検索'),
