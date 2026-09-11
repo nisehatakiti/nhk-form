@@ -249,9 +249,7 @@ class NHK_Form_Product_Integrations {
 		if ( empty( $_GET['nhk_link_result'] ) ) return;
 		$result = sanitize_key( $_GET['nhk_link_result'] );
 		$messages = array(
-			'unlinked'     => 'フォームの連携を解除しました。両方のフォームは残っています。',
-			'trashed_both' => '連携している両方のフォームをゴミ箱へ移動しました。',
-			'reconnected'  => 'フォームの連携を再接続しました。',
+			'trashed_both' => '連携先も含めてフォームをゴミ箱へ移動しました。',
 		);
 		if ( empty( $messages[ $result ] ) ) return;
 		echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( $messages[ $result ] ) . '</p></div>';
@@ -269,15 +267,8 @@ class NHK_Form_Product_Integrations {
 			? ( 'alumni-core' === NHK_Form_Post_Type::source_provider( $post->ID ) && NHK_Form_Post_Type::source_id( $post->ID ) )
 			: ! empty( self::find_nhk_mirrors( $post->ID ) );
 
-		if ( $linked ) {
-			$actions['nhk_unlink'] = '<a href="' . esc_url( self::action_url( $post->ID, 'unlink' ) ) . '">連携解除</a>';
-			if ( 'trash' !== $post->post_status ) {
-				$actions['nhk_trash_both'] = '<a href="' . esc_url( self::action_url( $post->ID, 'trash_both' ) ) . '" onclick="return confirm(\'連携先もゴミ箱へ移動します。\');">両方をゴミ箱へ</a>';
-			}
-		} elseif ( $is_nhk && 'unlinked' === get_post_meta( $post->ID, NHK_Form_Post_Type::META_LINK_STATE, true ) ) {
-			$actions['nhk_reconnect'] = '<a href="' . esc_url( self::action_url( $post->ID, 'reconnect' ) ) . '">Alumni Coreに再接続</a>';
-		} elseif ( $is_alumni && 'unlinked' === get_post_meta( $post->ID, '_nhk_form_link_state', true ) ) {
-			$actions['nhk_reconnect'] = '<a href="' . esc_url( self::action_url( $post->ID, 'reconnect' ) ) . '">NHK Formに再接続</a>';
+		if ( $linked && 'trash' !== $post->post_status ) {
+			$actions['nhk_trash_both'] = '<a href="' . esc_url( self::action_url( $post->ID, 'trash_both' ) ) . '" onclick="return confirm(\'連携先も含めてゴミ箱へ移動します。\');">連携先も含めてゴミ箱へ</a>';
 		}
 		return $actions;
 	}
@@ -298,57 +289,26 @@ class NHK_Form_Product_Integrations {
 		if ( ! $post || ! current_user_can( 'delete_post', $post_id ) ) wp_die( '権限がありません。' );
 		check_admin_referer( 'nhk_form_link_action_' . $post_id . '_' . $link_action );
 
+		if ( 'trash_both' !== $link_action ) wp_die( '無効な操作です。' );
+
 		$is_nhk = NHK_Form_Post_Type::SLUG === $post->post_type;
 		$form_type = '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type';
 		$is_alumni = class_exists( $form_type ) && $form_type::SLUG === $post->post_type;
 		if ( ! $is_nhk && ! $is_alumni ) wp_die( '対象フォームではありません。' );
 
-		if ( 'unlink' === $link_action ) {
-			if ( $is_nhk ) {
-				$source_id = NHK_Form_Post_Type::source_id( $post_id );
-				if ( $source_id ) update_post_meta( $source_id, '_nhk_form_link_state', 'unlinked' );
-				self::unlink_nhk_form( $post_id );
-			} else {
-				foreach ( self::find_nhk_mirrors( $post_id ) as $nhk_id ) self::unlink_nhk_form( $nhk_id );
-				update_post_meta( $post_id, '_nhk_form_link_state', 'unlinked' );
-			}
-			$result = 'unlinked';
-		} elseif ( 'trash_both' === $link_action ) {
-			if ( $is_nhk ) {
-				$source_id = NHK_Form_Post_Type::source_id( $post_id );
-				if ( $source_id && get_post_status( $source_id ) !== 'trash' ) wp_trash_post( $source_id );
-				if ( get_post_status( $post_id ) !== 'trash' ) wp_trash_post( $post_id );
-			} else {
-				foreach ( self::find_nhk_mirrors( $post_id ) as $nhk_id ) if ( get_post_status( $nhk_id ) !== 'trash' ) wp_trash_post( $nhk_id );
-				if ( get_post_status( $post_id ) !== 'trash' ) wp_trash_post( $post_id );
-			}
-			$result = 'trashed_both';
-		} elseif ( 'reconnect' === $link_action ) {
-			if ( $is_nhk ) {
-				delete_post_meta( $post_id, NHK_Form_Post_Type::META_LINK_STATE );
-				delete_post_meta( $post_id, '_nhk_form_unlinked_at' );
-				self::sync_alumni_source_from_nhk( $post_id );
-			} else {
-				delete_post_meta( $post_id, '_nhk_form_link_state' );
-				delete_post_meta( $post_id, '_nhk_form_unlinked_at' );
-				$nhk_id = wp_insert_post( array(
-					'post_type'   => NHK_Form_Post_Type::SLUG,
-					'post_status' => $post->post_status,
-					'post_title'  => $post->post_title,
-				), true );
-				if ( ! is_wp_error( $nhk_id ) && $nhk_id ) {
-					self::copy_alumni_form_to_nhk( $post_id, $nhk_id );
-					update_post_meta( $nhk_id, NHK_Form_Post_Type::META_SOURCE_PROVIDER, 'alumni-core' );
-					update_post_meta( $nhk_id, NHK_Form_Post_Type::META_SOURCE_ID, $post_id );
-				}
-			}
-			$result = 'reconnected';
+		if ( $is_nhk ) {
+			$source_id = NHK_Form_Post_Type::source_id( $post_id );
+			if ( $source_id && get_post_status( $source_id ) !== 'trash' ) wp_trash_post( $source_id );
+			if ( get_post_status( $post_id ) !== 'trash' ) wp_trash_post( $post_id );
 		} else {
-			wp_die( '無効な操作です。' );
+			foreach ( self::find_nhk_mirrors( $post_id ) as $nhk_id ) {
+				if ( get_post_status( $nhk_id ) !== 'trash' ) wp_trash_post( $nhk_id );
+			}
+			if ( get_post_status( $post_id ) !== 'trash' ) wp_trash_post( $post_id );
 		}
 
 		$redirect = wp_get_referer() ?: admin_url( 'edit.php?post_type=' . $post->post_type );
-		wp_safe_redirect( add_query_arg( 'nhk_link_result', $result, $redirect ) );
+		wp_safe_redirect( add_query_arg( 'nhk_link_result', 'trashed_both', $redirect ) );
 		exit;
 	}
 
