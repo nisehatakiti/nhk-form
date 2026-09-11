@@ -4,7 +4,7 @@ Tags: form, contact form, form builder, post submission
 Requires at least: 5.9
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 0.2.1
+Stable tag: 0.2.2
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -55,6 +55,10 @@ Yes. A form submission can create a WordPress post as a draft for administrator 
 Yes. External plugins can register schemas through the NHK Form schema integration hooks.
 
 == Changelog ==
+
+= 0.2.2 =
+* Existing Alumni Core forms are automatically imported as editable NHK Form records.
+* Saving an imported form in NHK Form updates the original Alumni Core form definition.
 
 = 0.2.1 =
 * Automatically detects Alumni Core and provides Alumni Core content schemas.
