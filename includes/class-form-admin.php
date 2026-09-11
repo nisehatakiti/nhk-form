@@ -7,7 +7,7 @@ class NHK_Form_Admin {
  public static function render($post){
   wp_nonce_field(self::NONCE,self::NONCE);$source_provider=NHK_Form_Post_Type::source_provider($post->ID);$source_id=NHK_Form_Post_Type::source_id($post->ID);$mode=NHK_Form_Post_Type::mode($post->ID);$schema=NHK_Form_Post_Type::schema($post->ID);$fields=NHK_Form_Post_Type::fields($post->ID);$schemas=NHK_Form_Schema_Registry::all();
   ?><style>.nhk-field{border:1px solid #ccd0d4;padding:14px;margin:12px 0;background:#fff}.nhk-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.nhk-grid label{display:block;font-weight:600}.nhk-grid input,.nhk-grid select{width:100%}@media(max-width:782px){.nhk-grid{grid-template-columns:1fr}}</style>
-  <?php if('alumni-core'===$source_provider&&$source_id):?><div class="notice notice-info inline"><p><strong>Alumni Core連携フォーム</strong>です。ここで保存した内容は、既存のAlumni Coreフォームにも自動反映されます。</p></div><?php elseif('unlinked'===get_post_meta($post->ID,NHK_Form_Post_Type::META_LINK_STATE,true)):?><div class="notice notice-warning inline"><p><strong>連携解除済みフォーム</strong>です。現在Alumni Coreとは同期していません。フォーム一覧の「Alumni Coreに再接続」から再接続できます。</p></div><?php endif;?>
+  <?php if('alumni-core'===$source_provider&&$source_id):?><div class="notice notice-info inline"><p><strong>Alumni Core連携フォーム</strong>です。ここで保存した内容は、既存のAlumni Coreフォームにも自動反映されます。</p></div><?php endif;?>
   <h3>フォームの用途</h3>
   <label><input type="radio" name="nhk_form_mode" value="standard" <?php checked($mode,'standard');?>> 通常フォーム（通知・受付）</label><br>
   <label><input type="radio" name="nhk_form_mode" value="post_submission" <?php checked($mode,'post_submission');?>> 投稿作成フォーム（送信内容から下書きを作成）</label>
