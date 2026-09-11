@@ -10,6 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 class NHK_Form_Product_Integrations {
 	public static function register() {
 		self::register_alumni_core();
+		self::register_alumni_core_form_templates();
 		do_action( 'nhk_form_register_product_schemas' );
 	}
 
@@ -100,4 +101,106 @@ class NHK_Form_Product_Integrations {
 			),
 		) );
 	}
+
+	private static function register_alumni_core_form_templates() {
+		if ( ! class_exists( '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type' ) ) return;
+
+		$form_type = '\\AlumniCore\\Includes\\Modules\\Forms\\Post_Type';
+		$forms = get_posts( array(
+			'post_type'      => $form_type::SLUG,
+			'post_status'    => array( 'publish', 'draft', 'private' ),
+			'posts_per_page' => -1,
+			'orderby'        => 'ID',
+			'order'          => 'ASC',
+		) );
+
+		foreach ( $forms as $form ) {
+			$target = $form_type::get_target( $form->ID );
+			if ( ! $target ) continue;
+
+			$fields = $form_type::get_fields( $form->ID );
+			if ( ! $fields ) continue;
+
+			$keys = array();
+			foreach ( $fields as $field ) {
+				if ( ! empty( $field['key'] ) ) $keys[] = sanitize_key( $field['key'] );
+			}
+
+			$map = self::legacy_alumni_map( $target, $keys );
+			if ( empty( $map ) ) continue;
+
+			$schema = array(
+				'label'       => 'Alumni Coreフォーム：' . get_the_title( $form ),
+				'description' => 'Alumni Coreに登録済みのフォーム定義を自動読み取りしました。',
+				'provider'    => 'alumni-core',
+				'post_type'   => $map['post_type'],
+				'fields'      => $fields,
+				'fixed_meta'  => $map['fixed_meta'],
+				'map'         => $map['map'],
+			);
+
+			NHK_Form_Schema_Registry::register( 'alumni_form_' . $form->ID, $schema );
+		}
+	}
+
+	private static function legacy_alumni_map( $target, $keys ) {
+		$pick = function( $candidates ) use ( $keys ) {
+			foreach ( $candidates as $key ) if ( in_array( $key, $keys, true ) ) return $key;
+			return '';
+		};
+
+		if ( 'person_greeting' === $target
+			&& class_exists( '\\AlumniCore\\Includes\\Modules\\Content\\Post_Type' ) ) {
+			$content = '\\AlumniCore\\Includes\\Modules\\Content\\Post_Type';
+			$title = $pick( array( 'content_name', 'name', 'title' ) );
+			$body  = $pick( array( 'body', 'content' ) );
+			if ( ! $title ) return array();
+
+			$meta = array();
+			$pairs = array(
+				$content::META_PERSON_NAME   => array( 'person_name', 'name' ),
+				$content::META_PERSON_KANA   => array( 'person_kana', 'kana' ),
+				$content::META_PERSON_TITLE  => array( 'person_title', 'role', 'position' ),
+				$content::META_PERSON_TERM   => array( 'person_term', 'term' ),
+				$content::META_PERSON_TENURE => array( 'person_tenure', 'tenure' ),
+			);
+			foreach ( $pairs as $meta_key => $candidates ) {
+				$key = $pick( $candidates );
+				if ( $key ) $meta[ $meta_key ] = $key;
+			}
+
+			$files = array();
+			$photo = $pick( array( 'photo', 'profile_photo', 'image' ) );
+			if ( $photo ) $files[ $photo ] = $content::META_PERSON_PHOTO_ID;
+
+			return array(
+				'post_type'  => $content::SLUG,
+				'fixed_meta' => array( $content::META_KIND => $content::KIND_PERSON_GREETING ),
+				'map'        => array( 'title' => $title, 'content' => $body, 'meta' => $meta, 'files' => $files ),
+			);
+		}
+
+		if ( 'news_event' === $target
+			&& class_exists( '\\AlumniCore\\Includes\\Modules\\NewsEvents\\Post_Type' ) ) {
+			$news = '\\AlumniCore\\Includes\\Modules\\NewsEvents\\Post_Type';
+			$title = $pick( array( 'title', 'name' ) );
+			if ( ! $title ) return array();
+			$content = $pick( array( 'content', 'body' ) );
+			$date = $pick( array( 'event_date', 'date' ) );
+			$photo = $pick( array( 'photo', 'image' ) );
+			return array(
+				'post_type'  => $news::SLUG,
+				'fixed_meta' => array( $news::META_CONTENT_TYPE => $date ? $news::TYPE_EVENT : $news::TYPE_NEWS ),
+				'map'        => array(
+					'title'   => $title,
+					'content' => $content,
+					'meta'    => $date ? array( $news::META_EVENT_DATE => $date ) : array(),
+					'files'   => $photo ? array( $photo => 'featured' ) : array(),
+				),
+			);
+		}
+
+		return array();
+	}
+
 }
