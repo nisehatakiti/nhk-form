@@ -1,0 +1,70 @@
+name: Build distribution ZIP
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build plugin package
+        run: |
+          set -eu
+
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "${VERSION}" = "${GITHUB_REF_NAME}" ]; then
+            VERSION="dev"
+          fi
+
+          mkdir -p dist/nhk-form
+
+          cp nhk-form.php dist/nhk-form/
+          cp uninstall.php dist/nhk-form/
+          cp README.md dist/nhk-form/
+          cp readme.txt dist/nhk-form/
+          cp LICENSE dist/nhk-form/
+
+          cp -R includes dist/nhk-form/
+
+          # Add runtime asset directories only when they exist.
+          for dir in assets admin public languages; do
+            if [ -d "${dir}" ]; then
+              cp -R "${dir}" "dist/nhk-form/"
+            fi
+          done
+
+          (
+            cd dist
+            zip -r "nhk-form-${VERSION}.zip" nhk-form \
+              -x "*.DS_Store" "*/Thumbs.db" "*/desktop.ini" \
+                 "*/.git/*" "*/.github/*" "*/.vscode/*" "*/.idea/*" \
+                 "*/tests/*" "*/test/*" "*/node_modules/*" \
+                 "*.log" "*.bak" "*.backup" "*.tmp" "*.temp"
+          )
+
+      - name: Verify ZIP structure
+        run: |
+          set -eu
+          ZIP_FILE="$(find dist -maxdepth 1 -name 'nhk-form-*.zip' -type f | head -n 1)"
+          test -n "${ZIP_FILE}"
+          unzip -l "${ZIP_FILE}" | grep -q "nhk-form/nhk-form.php"
+          unzip -l "${ZIP_FILE}" | grep -q "nhk-form/uninstall.php"
+          unzip -l "${ZIP_FILE}" | grep -q "nhk-form/readme.txt"
+          unzip -l "${ZIP_FILE}" | grep -q "nhk-form/LICENSE"
+
+      - name: Upload distribution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nhk-form-distribution
+          path: dist/nhk-form-*.zip
+          if-no-files-found: error
